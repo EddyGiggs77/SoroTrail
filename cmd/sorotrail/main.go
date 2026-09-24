@@ -94,6 +94,8 @@ func dispatch(args []string) error {
 		return runMigrateStatus(args[1:])
 	case "completion":
 		return runCompletion(args[1:])
+	case "stats":
+		return runStats(args[1:])
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -127,6 +129,8 @@ subcommands:
                    (sorotrail migrate-status --help)
   completion       print a shell completion script (bash, zsh, fish)
                    (sorotrail completion --help)
+  stats            print store stats as a table
+                   (sorotrail stats --help)
 `)
 }
 
@@ -302,6 +306,7 @@ func run() error {
 		MaxBackoff:              cfg.IngesterMaxBackoff,
 		ReorgConfirmationWindow: cfg.ReorgConfirmationWindow,
 		ReorgRescanInterval:     cfg.ReorgRescanInterval,
+		SkipContracts:           cfg.SkipContracts,
 		Network:                 cfg.Network,
 	}).WithBroadcaster(bcast)
 	ing.SetNotifier(wh)

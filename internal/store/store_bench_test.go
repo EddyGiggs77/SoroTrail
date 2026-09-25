@@ -82,6 +82,7 @@ func BenchmarkUpsertBatchMemory_1000(b *testing.B) {
 }
 
 func benchmarkUpsertPayload(b *testing.B, size int) {
+	_ = generateDummyEvents(100000, size)
 	events := generateDummyPayloads(100000, size)
 	b.ResetTimer()
 	b.ReportAllocs()

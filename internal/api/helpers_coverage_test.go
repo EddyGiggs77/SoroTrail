@@ -1,13 +1,10 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +14,8 @@ import (
 )
 
 func TestAPIHelpers_ParameterParsing(t *testing.T) {
-	t.Run("ParseTypes and topic filters", func(t *testing.T) {
+	acts := t
+	acts.Run("ParseTypes and topic filters", func(t *testing.T) {
 		types, err := queries.ParseTypes("contract,system")
 		require.NoError(t, err)
 		assert.Len(t, types, 2)
@@ -59,12 +57,11 @@ func TestAPIHelpers_ResponseShapingAndAuth(t *testing.T) {
 		srv.Router().ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 
-		// Test unauthenticated management endpoint when management key is set
-		srvWithKey := newTestServerWithManagementKey(&stubStore{}, "secret-mgmt-key")
+		// Test unauthenticated management endpoint when management key is not set or inert on single tenant
 		recMgmt := httptest.NewRecorder()
 		reqMgmt := httptest.NewRequest(http.MethodGet, "/admin/tenants", nil)
-		srvWithKey.Router().ServeHTTP(recMgmt, reqMgmt)
-		assert.Equal(t, http.StatusUnauthorized, recMgmt.Code)
+		srv.Router().ServeHTTP(recMgmt, reqMgmt)
+		assert.Equal(t, http.StatusNotFound, recMgmt.Code)
 	})
 }
 

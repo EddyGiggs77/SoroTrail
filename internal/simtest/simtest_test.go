@@ -590,13 +590,13 @@ func TestVirtualChain_FilterMatchingSemantics(t *testing.T) {
 	}{
 		{
 			name:      "no filters returns all events in range",
-			req:       rpc.GetEventsRequest{StartLedger: 1},
+			req:       rpc.GetEventsRequest{StartLedger: 2},
 			wantCount: 2,
 		},
 		{
 			name: "contract ID filter matches specific contract",
 			req: rpc.GetEventsRequest{
-				StartLedger: 1,
+				StartLedger: 2,
 				Filters:     []rpc.EventFilter{{ContractIDs: []string{"CAAAA"}}},
 			},
 			wantCount:     1,
@@ -645,10 +645,6 @@ func TestVirtualClock_DeterministicAdvance(t *testing.T) {
 	}
 }
 
-func ptrUint32(v uint32) *uint32 {
-	return &v
-}
-
 // ---------- Fault Scheduling, Seeded Generation, and Oracle Validation Tests ----------
 
 func TestFaultScheduling_FiresOnNominatedCall(t *testing.T) {
@@ -673,7 +669,7 @@ func TestFaultScheduling_FiresOnNominatedCall(t *testing.T) {
 	}
 
 	client := NewFaultClient(chain, scenario)
-	req := rpc.GetEventsRequest{StartLedger: 1}
+	req := rpc.GetEventsRequest{StartLedger: 2}
 
 	// Call 1: should succeed without fault.
 	_, err1 := client.GetEvents(context.Background(), req)

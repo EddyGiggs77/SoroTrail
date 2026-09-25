@@ -1,8 +1,8 @@
 package decode
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stellar/go-stellar-sdk/xdr"

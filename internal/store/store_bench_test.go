@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func generateDummyEvents(startLedger uint32, count int) []any {
+func generateDummyAnyEvents(startLedger uint32, count int) []any {
 	res := make([]any, count)
 	for i := 0; i < count; i++ {
 		res[i] = map[string]any{

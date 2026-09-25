@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func mkReq(method, path string) *http.Request {
@@ -60,19 +62,37 @@ func TestClientKeyUsesRemoteAddrWhenNoCredential(t *testing.T) {
 	}
 }
 
+// TestCeilSeconds pins the Retry-After rounding. Rounding down would
+// tell a throttled client to retry before its budget refills, which
+// produces a second 429 and looks like the limiter is broken; a
+// negative value would violate RFC 7231's delta-seconds contract
+// outright.
 func TestCeilSeconds(t *testing.T) {
-	cases := []struct{ in, want time.Duration }{
-		{0, time.Second},
-		{1, time.Second},
-		{999 * time.Millisecond, time.Second},
-		{time.Second, time.Second},
-		{time.Second + time.Millisecond, 2 * time.Second},
-		{2 * time.Second, 2 * time.Second},
+	cases := []struct {
+		name string
+		in   time.Duration
+		want time.Duration
+	}{
+		{name: "zero returns the documented minimum", in: 0, want: time.Second},
+		{name: "sub-second never rounds down to zero", in: time.Millisecond, want: time.Second},
+		{name: "one nanosecond rounds up to a full second", in: 1, want: time.Second},
+		{name: "sub-second rounds up to one", in: 500 * time.Millisecond, want: time.Second},
+		{name: "exact whole second stays as is", in: time.Second, want: time.Second},
+		{name: "larger exact multiple stays as is", in: 3 * time.Second, want: 3 * time.Second},
+		{name: "fractional duration rounds up", in: 1500 * time.Millisecond, want: 2 * time.Second},
+		{name: "just over a second rounds up to two", in: time.Second + time.Nanosecond, want: 2 * time.Second},
+		{name: "999 milliseconds round up to one", in: 999 * time.Millisecond, want: time.Second},
+		{name: "negative duration clamps to the minimum", in: -500 * time.Millisecond, want: time.Second},
+		{name: "large negative never yields a negative header", in: -time.Hour, want: time.Second},
 	}
+
 	for _, c := range cases {
-		if got := ceilSeconds(c.in); got != c.want {
-			t.Fatalf("ceilSeconds(%s) = %s, want %s", c.in, got, c.want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			got := ceilSeconds(c.in)
+			assert.Equal(t, c.want, got, "ceilSeconds(%s)", c.in)
+			assert.Greater(t, got, time.Duration(0),
+				"Retry-After must never be zero or negative (input %s)", c.in)
+		})
 	}
 }
 

@@ -16,17 +16,15 @@ func generateDummyEvents(startLedger uint32, count int) []any {
 }
 
 func generateDummyStoreEvents(startLedger uint32, count int) []Event {
-	return generateDummyPayloads(startLedger, count)
-}
-
-func generateDummyPayloads(startLedger uint32, count int) []any {
-	res := make([]any, count)
-	for i := 0; i < count; i++ {
-		res[i] = map[string]any{
-			"ledger": startLedger + uint32(i),
+	payloads := generateDummyEvents(startLedger, count)
+	events := make([]Event, len(payloads))
+	for i, p := range payloads {
+		m := p.(map[string]any)
+		events[i] = Event{
+			Ledger: int64(m["ledger"].(uint32)),
 		}
 	}
-	return res
+	return events
 }
 
 func buildQuery(f EventFilter) (string, []any, error) {

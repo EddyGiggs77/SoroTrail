@@ -14,8 +14,7 @@ import (
 )
 
 func TestAPIHelpers_ParameterParsing(t *testing.T) {
-	acts := t
-	acts.Run("ParseTypes and topic filters", func(t *testing.T) {
+	t.Run("ParseTypes and topic filters", func(t *testing.T) {
 		types, err := queries.ParseTypes("contract,system")
 		require.NoError(t, err)
 		assert.Len(t, types, 2)
@@ -40,7 +39,6 @@ func TestAPIHelpers_HeaderConstruction(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/events", nil)
 		req.Header.Set("X-Request-ID", "req-xyz-123")
 
-		// Invoke a request through test server middleware to check header propagation
 		srv := newTestServer(&stubStore{}, nil)
 		srv.Router().ServeHTTP(rec, req)
 
@@ -50,14 +48,12 @@ func TestAPIHelpers_HeaderConstruction(t *testing.T) {
 
 func TestAPIHelpers_ResponseShapingAndAuth(t *testing.T) {
 	t.Run("envelope, projection, SEP-41 tagging, and auth fail-closed", func(t *testing.T) {
-		// Test unauthorized request to a tenant/admin route
 		srv := newTestServer(&stubStore{}, nil)
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/tenant", nil)
 		srv.Router().ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 
-		// Test unauthenticated management endpoint when management key is not set or inert on single tenant
 		recMgmt := httptest.NewRecorder()
 		reqMgmt := httptest.NewRequest(http.MethodGet, "/admin/tenants", nil)
 		srv.Router().ServeHTTP(recMgmt, reqMgmt)

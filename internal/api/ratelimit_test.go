@@ -24,6 +24,10 @@ func startLimiter(t *testing.T, lim *RateLimiter) func() {
 	}
 }
 
+// TestClientIP pins the extraction rules the rate limiter keys on.
+// They matter for security: trusting XFF blindly lets a caller mint
+// unlimited identities, and skipping a valid hop silently regroups
+// traffic under the wrong bucket.
 func TestClientIP(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -32,11 +36,101 @@ func TestClientIP(t *testing.T) {
 		trustXFF   bool
 		want       string
 	}{
-		{name: "trusted honors XFF", remoteAddr: "203.0.113.9:5432", xff: "198.51.100.7, 10.0.0.1", trustXFF: true, want: "198.51.100.7"},
-		{name: "untrusted ignores XFF", remoteAddr: "203.0.113.9:5432", xff: "198.51.100.7, 10.0.0.1", want: "203.0.113.9"},
-		{name: "trusted falls back to remote without XFF", remoteAddr: "203.0.113.9:5432", trustXFF: true, want: "203.0.113.9"},
-		{name: "trusted skips invalid XFF parts", remoteAddr: "203.0.113.9:5432", xff: "not-an-ip, 198.51.100.7", trustXFF: true, want: "198.51.100.7"},
-		{name: "bare IP remote without port", remoteAddr: "203.0.113.9", trustXFF: true, want: "203.0.113.9"},
+		{
+			name:       "direct connection uses the remote address",
+			remoteAddr: "203.0.113.9:5432",
+			want:       "203.0.113.9",
+		},
+		{
+			name:       "port is stripped from the remote address",
+			remoteAddr: "198.51.100.1:65535",
+			want:       "198.51.100.1",
+		},
+		{
+			name:       "trusted proxy honors the leftmost XFF entry",
+			remoteAddr: "10.0.0.1:443",
+			xff:        "198.51.100.7, 10.0.0.1",
+			trustXFF:   true,
+			want:       "198.51.100.7",
+		},
+		{
+			name:       "untrusted proxy ignores XFF entirely",
+			remoteAddr: "203.0.113.9:5432",
+			xff:        "198.51.100.7, 10.0.0.1",
+			want:       "203.0.113.9",
+		},
+		{
+			name:       "trusted with no XFF falls back to remote",
+			remoteAddr: "203.0.113.9:5432",
+			trustXFF:   true,
+			want:       "203.0.113.9",
+		},
+		{
+			name:       "multi-hop chain picks the first valid entry",
+			remoteAddr: "10.0.0.1:443",
+			xff:        "not-an-ip, 198.51.100.7, 172.16.0.9",
+			trustXFF:   true,
+			want:       "198.51.100.7",
+		},
+		{
+			name:       "trusted with all-invalid XFF falls back to remote",
+			remoteAddr: "203.0.113.9:5432",
+			xff:        "not-an-ip, , also-bad",
+			trustXFF:   true,
+			want:       "203.0.113.9",
+		},
+		{
+			name:       "IPv6 remote keeps brackets off the key",
+			remoteAddr: "[2001:db8::1]:443",
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "bare IPv6 remote without port",
+			remoteAddr: "2001:db8::1",
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "bracketed IPv6 remote without port",
+			remoteAddr: "[2001:db8::1]",
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "unbracketed IPv6 in XFF",
+			remoteAddr: "10.0.0.1:443",
+			xff:        "2001:db8::1, 10.0.0.1",
+			trustXFF:   true,
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "bracketed IPv6 with port in XFF",
+			remoteAddr: "10.0.0.1:443",
+			xff:        "[2001:db8::1]:4711, 10.0.0.1",
+			trustXFF:   true,
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "bracketed IPv6 without port in XFF",
+			remoteAddr: "10.0.0.1:443",
+			xff:        "[2001:db8::1], 10.0.0.1",
+			trustXFF:   true,
+			want:       "2001:db8::1",
+		},
+		{
+			// A malformed address must produce the documented empty
+			// result so clientKey can substitute its stable
+			// "unknown" key instead of bucketing on junk.
+			name:       "malformed remote yields empty result",
+			remoteAddr: "garbage-without-a-port",
+			want:       "",
+		},
+		{
+			// host:port syntax alone is not enough: "foo:bar"
+			// splits cleanly but names no IP, and returning it raw
+			// would give every typo its own bucket.
+			name:       "non-IP host in remote yields empty result",
+			remoteAddr: "foo:bar",
+			want:       "",
+		},
 	}
 
 	for _, c := range cases {
@@ -46,9 +140,36 @@ func TestClientIP(t *testing.T) {
 			if c.xff != "" {
 				r.Header.Set("X-Forwarded-For", c.xff)
 			}
-			if got := clientIP(r, c.trustXFF); got != c.want {
-				t.Fatalf("clientIP() = %q, want %q (trustXFF=%v, XFF=%q)", got, c.want, c.trustXFF, c.xff)
-			}
+			got := clientIP(r, c.trustXFF)
+			assert.Equal(t, c.want, got,
+				"clientIP(trustXFF=%v, RemoteAddr=%q, XFF=%q)",
+				c.trustXFF, c.remoteAddr, c.xff)
+		})
+	}
+}
+
+// TestClientKeyStableFallbackForMalformedAddress covers the hand-off
+// the issue is about: a malformed address must not become an empty
+// rate-limit key, because an empty key would merge every broken client
+// into one bucket (or, worse, if treated as "no key", let them through
+// unthrottled).
+func TestClientKeyStableFallbackForMalformedAddress(t *testing.T) {
+	cases := []struct {
+		name       string
+		remoteAddr string
+		want       string
+	}{
+		{name: "malformed remote maps to unknown", remoteAddr: "garbage-without-a-port", want: "unknown"},
+		{name: "empty remote maps to unknown", remoteAddr: "", want: "unknown"},
+		{name: "valid remote keeps its IP key", remoteAddr: "203.0.113.9:1234", want: "203.0.113.9"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			l := NewRateLimiter(1, 1, false)
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = c.remoteAddr
+			assert.Equal(t, c.want, l.clientKey(r))
 		})
 	}
 }

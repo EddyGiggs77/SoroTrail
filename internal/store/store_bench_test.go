@@ -6,7 +6,13 @@ import (
 )
 
 func generateDummyEvents(startLedger uint32, count int) []any {
-	return generateStoreDummyEvents(startLedger, count)
+	res := make([]any, count)
+	for i := 0; i < count; i++ {
+		res[i] = map[string]any{
+			"ledger": startLedger + uint32(i),
+		}
+	}
+	return res
 }
 
 func generateStoreDummyEvents(startLedger uint32, count int) []any {

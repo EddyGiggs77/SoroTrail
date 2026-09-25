@@ -15,6 +15,10 @@ func generateDummyEvents(startLedger uint32, count int) []any {
 	return res
 }
 
+func generateDummyStoreEvents(startLedger uint32, count int) []any {
+	return generateDummyEvents(startLedger, count)
+}
+
 func generateDummyPayloads(startLedger uint32, count int) []any {
 	res := make([]any, count)
 	for i := 0; i < count; i++ {
@@ -82,7 +86,7 @@ func BenchmarkUpsertBatchMemory_1000(b *testing.B) {
 }
 
 func benchmarkUpsertPayload(b *testing.B, size int) {
-	events := generateDummyEvents(100000, size)
+	events := generateDummyStoreEvents(100000, size)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

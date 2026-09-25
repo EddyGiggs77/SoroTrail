@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func generateDummyEvents(startLedger uint32, count int) []any {
+	res := make([]any, count)
+	for i := 0; i < count; i++ {
+		res[i] = map[string]any{
+			"ledger": startLedger + uint32(i),
+		}
+	}
+	return res
+}
+
 func buildQuery(f EventFilter) (string, []any, error) {
 	query := "SELECT * FROM events WHERE 1=1"
 	var args []any
@@ -17,16 +27,6 @@ func buildQuery(f EventFilter) (string, []any, error) {
 		args = append(args, f.Limit)
 	}
 	return query, args, nil
-}
-
-func generateDummyEvents(startLedger uint32, count int) []any {
-	res := make([]any, count)
-	for i := 0; i < count; i++ {
-		res[i] = map[string]any{
-			"ledger": startLedger + uint32(i),
-		}
-	}
-	return res
 }
 
 func BenchmarkQueryConstruction_SimpleFilter(b *testing.B) {
@@ -46,8 +46,8 @@ func BenchmarkQueryConstruction_ComplexFilter(b *testing.B) {
 	filter := EventFilter{
 		ContractID:    "C0000000000000000000000000000000000000000000000000000001",
 		Types:         []string{"contract"},
-		MinLedger:     1000,
-		MaxLedger:     2000,
+		FromLedger:    1000,
+		ToLedger:      2000,
 		TopicContains: json.RawMessage(`[{"symbol":"transfer"}]`),
 		Limit:         100,
 	}
@@ -76,7 +76,6 @@ func benchmarkUpsertPayload(b *testing.B, size int) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		// Exercise data serialization or slice preparation overhead without live DB
 		_ = events
 	}
 }

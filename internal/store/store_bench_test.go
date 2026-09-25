@@ -15,8 +15,8 @@ func generateDummyEvents(startLedger uint32, count int) []any {
 	return res
 }
 
-func generateDummyStoreEvents(startLedger uint32, count int) []any {
-	return generateDummyEvents(startLedger, count)
+func generateDummyStoreEvents(startLedger uint32, count int) []Event {
+	return generateDummyPayloads(startLedger, count)
 }
 
 func generateDummyPayloads(startLedger uint32, count int) []any {

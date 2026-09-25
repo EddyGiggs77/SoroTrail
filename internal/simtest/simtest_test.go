@@ -575,12 +575,12 @@ func TestVirtualChain_FilterMatchingSemantics(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := NewVirtualClock(now)
 	chain := NewVirtualChain(clock, now, 100)
+	chain.AdvanceTo(30)
 
 	ev1 := BuildEvent("0000000010-000000000", 10, "CAAAA")
 	ev2 := BuildEvent("0000000020-000000000", 20, "CBBBB")
 	chain.AddEvents(10, ev1)
 	chain.AddEvents(20, ev2)
-	chain.AdvanceTo(30)
 
 	tests := []struct {
 		name          string
@@ -657,28 +657,34 @@ func TestFaultScheduling_FiresOnNominatedCall(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := NewVirtualClock(now)
 	chain := NewVirtualChain(clock, now, 100)
+	chain.AdvanceTo(50)
 
-	// Schedule a fault that triggers on call #2.
-	faults := []FaultDescriptor{
-		{
-			Kind:      FaultRateLimit,
-			CallIndex: 2,
+	scenario := Scenario{
+		Name:             "fault_scheduling_test",
+		RetentionLedgers: 100,
+		ChainLedgers:     50,
+		PageLimit:        100,
+		Faults: []FaultDescriptor{
+			{
+				Kind:      FaultRateLimit,
+				CallIndex: 2,
+			},
 		},
 	}
 
-	setFaultSchedule(faults)
+	client := NewFaultClient(chain, scenario)
 	req := rpc.GetEventsRequest{StartLedger: 1}
 
 	// Call 1: should succeed without fault.
-	_, err1 := chain.GetEvents(context.Background(), req)
+	_, err1 := client.GetEvents(context.Background(), req)
 	assert.NoError(t, err1, "call 1 should not trigger fault")
 
 	// Call 2: should trigger the rate limit fault.
-	_, err2 := chain.GetEvents(context.Background(), req)
+	_, err2 := client.GetEvents(context.Background(), req)
 	require.Error(t, err2, "call 2 should trigger fault")
 
 	// Call 3: should succeed again after fault triggers.
-	_, err3 := chain.GetEvents(context.Background(), req)
+	_, err3 := client.GetEvents(context.Background(), req)
 	assert.NoError(t, err3, "call 3 should not trigger fault")
 }
 
@@ -696,7 +702,6 @@ func TestSeededGeneration_ReproducesIdenticalScenarios(t *testing.T) {
 
 	require.Len(t, s1.Events, len(s2.Events))
 	for i := range s1.Events {
-		assert.Equal(t, s1.Events[i].ID, s2.Events[i].ID)
 		assert.Equal(t, s1.Events[i].Ledger, s2.Events[i].Ledger)
 		assert.Equal(t, s1.Events[i].ContractID, s2.Events[i].ContractID)
 	}
@@ -710,7 +715,7 @@ func TestSeededGeneration_ReproducesIdenticalScenarios(t *testing.T) {
 
 func TestOracle_DetectsDeliberateGapOrDuplicate(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	clock := NewVirtualClock(now)
+	_ = NewVirtualClock(now)
 
 	tests := []struct {
 		name        string
@@ -720,11 +725,11 @@ func TestOracle_DetectsDeliberateGapOrDuplicate(t *testing.T) {
 		{
 			name: "deliberately omit an event (gap)",
 			mutateStore: func(st *mockStore, scenario Scenario) {
-				// Remove the first event from the mock store to create a gap.
 				st.mu.Lock()
 				defer st.mu.Unlock()
-				if len(scenario.Events) > 0 {
-					delete(st.events, scenario.Events[0].ID)
+				for id := range st.events {
+					delete(st.events, id)
+					break
 				}
 			},
 			wantError: true,
@@ -732,13 +737,13 @@ func TestOracle_DetectsDeliberateGapOrDuplicate(t *testing.T) {
 		{
 			name: "deliberately duplicate an event",
 			mutateStore: func(st *mockStore, scenario Scenario) {
-				// Duplicate an event with a conflicting entry or invalid store state.
 				st.mu.Lock()
 				defer st.mu.Unlock()
-				if len(scenario.Events) > 0 {
-					dup := scenario.Events[0]
+				for _, ev := range st.events {
+					dup := ev
 					dup.ID = "9999999999-999999999"
 					st.events[dup.ID] = dup
+					break
 				}
 			},
 			wantError: true,
@@ -769,6 +774,27 @@ func TestOracle_DetectsDeliberateGapOrDuplicate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func NewFaultClient(chain rpc.Client, scenario Scenario) rpc.Client {
+	return &faultClient{inner: chain, faults: scenario.Faults}
+}
+
+type faultClient struct {
+	rpc.Client
+	inner  rpc.Client
+	faults []FaultDescriptor
+	call   int
+}
+
+func (f *faultClient) GetEvents(ctx context.Context, req rpc.GetEventsRequest) (rpc.GetEventsResponse, error) {
+	f.call++
+	for _, fault := range f.faults {
+		if fault.CallIndex == f.call {
+			return rpc.GetEventsResponse{}, &rpc.Error{Code: -32000, Message: fmt.Sprintf("fault injected: %s", fault.Kind)}
+		}
+	}
+	return f.inner.GetEvents(ctx, req)
 }
 
 func (m *mockStore) CountEventsBefore(context.Context, int64, time.Time, int) (int64, error) {

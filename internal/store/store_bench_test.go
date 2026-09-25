@@ -5,16 +5,6 @@ import (
 	"testing"
 )
 
-func generateDummyAnyEvents(startLedger uint32, count int) []any {
-	res := make([]any, count)
-	for i := 0; i < count; i++ {
-		res[i] = map[string]any{
-			"ledger": startLedger + uint32(i),
-		}
-	}
-	return res
-}
-
 func generateDummyStoreEvents(startLedger int64, count int) []Event {
 	events := make([]Event, count)
 	for i := 0; i < count; i++ {

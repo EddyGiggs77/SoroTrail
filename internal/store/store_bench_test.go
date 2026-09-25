@@ -16,12 +16,10 @@ func generateDummyEvents(startLedger uint32, count int) []any {
 }
 
 func generateDummyStoreEvents(startLedger int64, count int) []Event {
-	payloads := generateDummyEvents(uint32(startLedger), count)
-	events := make([]Event, len(payloads))
-	for i, p := range payloads {
-		m := p.(map[string]any)
+	events := make([]Event, count)
+	for i := 0; i < count; i++ {
 		events[i] = Event{
-			Ledger: int64(m["ledger"].(uint32)),
+			Ledger: startLedger + int64(i),
 		}
 	}
 	return events

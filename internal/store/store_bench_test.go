@@ -6,6 +6,10 @@ import (
 )
 
 func generateDummyEvents(startLedger uint32, count int) []any {
+	return generateStoreDummyEvents(startLedger, count)
+}
+
+func generateStoreDummyEvents(startLedger uint32, count int) []any {
 	res := make([]any, count)
 	for i := 0; i < count; i++ {
 		res[i] = map[string]any{
@@ -82,7 +86,7 @@ func BenchmarkUpsertBatchMemory_1000(b *testing.B) {
 }
 
 func benchmarkUpsertPayload(b *testing.B, size int) {
-	events := generateDummyPayloads(100000, size)
+	events := generateStoreDummyEvents(100000, size)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
